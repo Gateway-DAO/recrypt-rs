@@ -22,7 +22,7 @@ use crate::nonemptyvec::NonEmptyVec;
 use clear_on_drop::clear::Clear;
 use derivative::Derivative;
 use gridiron::fp_480::Fp480;
-use gridiron::fp_480::Monty as Monty480;
+pub use gridiron::fp_480::Monty as Monty480;
 use rand;
 use rand::rngs::adapter::ReseedingRng;
 use rand::SeedableRng;
@@ -406,7 +406,7 @@ impl Hashable for EncryptedTempKey {
 }
 
 impl EncryptedTempKey {
-    const ENCODED_SIZE_BYTES: usize = Fp12Elem::<Monty480>::ENCODED_SIZE_BYTES;
+    pub const ENCODED_SIZE_BYTES: usize = Fp12Elem::<Monty480>::ENCODED_SIZE_BYTES;
 
     fn from_fp12(fp12: Fp12Elem<Monty480>) -> Self {
         EncryptedTempKey {
@@ -446,7 +446,7 @@ impl Hashable for HashedValue {
 }
 
 impl HashedValue {
-    const ENCODED_SIZE_BYTES: usize = TwistedHPoint::<Monty480>::ENCODED_SIZE_BYTES;
+    pub const ENCODED_SIZE_BYTES: usize = TwistedHPoint::<Monty480>::ENCODED_SIZE_BYTES;
 
     pub fn new(bytes: [u8; HashedValue::ENCODED_SIZE_BYTES]) -> Result<Self> {
         Ok(
@@ -503,12 +503,12 @@ impl From<TwistedHPoint<Monty480>> for HashedValue {
 #[derive(Derivative, Debug, Clone)] //can't derive Copy because of NonEmptyVec
 #[derivative(PartialEq, Eq, Hash)]
 pub struct TransformKey {
-    ephemeral_public_key: PublicKey,
-    to_public_key: PublicKey,
-    encrypted_temp_key: EncryptedTempKey,
-    hashed_temp_key: HashedValue,
-    public_signing_key: PublicSigningKey,
-    signature: Ed25519Signature,
+    pub ephemeral_public_key: PublicKey,
+    pub to_public_key: PublicKey,
+    pub encrypted_temp_key: EncryptedTempKey,
+    pub hashed_temp_key: HashedValue,
+    pub public_signing_key: PublicSigningKey,
+    pub signature: Ed25519Signature,
     #[derivative(Hash = "ignore", PartialEq = "ignore")]
     _internal_key: internal::SignedValue<internal::ReencryptionKey<Monty480>>,
 }
