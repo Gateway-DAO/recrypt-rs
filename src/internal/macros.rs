@@ -98,6 +98,9 @@ macro_rules! new_bytes_type {
     ($t: ident, $n: expr) => {
         _bytes_struct!($t, derive(Copy, Clone));
         _bytes_core!($t, $n);
+        impl $t {
+            pub const SIZE: usize = $n;
+        }
         bytes_eq_and_hash!($t);
     };
 }
