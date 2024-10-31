@@ -132,7 +132,7 @@
 
 pub mod prelude;
 #[macro_use] // this is still required in Rust 2018
-mod internal; // this needs to come before `api` as api relies on macros defined in `internal`
+pub mod internal; // this needs to come before `api` as api relies on macros defined in `internal`
 pub mod api;
 pub mod api_480;
 mod api_common;
