@@ -5,3 +5,4 @@ Cargo.lock
 *.iml
 *.code-workspace
 .direnv
+*.DS_Store
