@@ -22,7 +22,7 @@ use crate::nonemptyvec::NonEmptyVec;
 use clear_on_drop::clear::Clear;
 use derivative::Derivative;
 use gridiron::fp_480::Fp480;
-pub use gridiron::fp_480::Monty as Monty480;
+use gridiron::fp_480::Monty as Monty480;
 use rand;
 use rand::rngs::adapter::ReseedingRng;
 use rand::SeedableRng;
