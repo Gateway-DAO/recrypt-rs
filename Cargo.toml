@@ -7,7 +7,7 @@ authors = [
 ]
 readme = "README.md"
 license = "AGPL-3.0-only"
-repository = "https://github.com/IronCoreLabs/recrypt-rs"
+repository = "https://github.com/Gateway-DAO/recrypt-rs"
 documentation = "https://docs.rs/recrypt"
 categories = ["cryptography", "algorithms"]
 keywords = [
@@ -17,9 +17,9 @@ keywords = [
 	"ECC",
 	"transform-encryption",
 ]
-description = "A pure-Rust implementation of Transform Encryption, a Proxy Re-encryption scheme"
+description = "A wrapper of IronCore Lab's pure-Rust implementation of Transform Encryption"
 edition = "2021"
-rust-version = "1.70.0"
+rust-version = "1.78"
 
 [target.'cfg(all(unix, not(target_arch = "wasm32")))'.dependencies]
 libc = { version = "0.2" }
