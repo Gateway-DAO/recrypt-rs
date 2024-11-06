@@ -7,25 +7,33 @@ license = "AGPL-3.0-only"
 repository = "https://github.com/IronCoreLabs/recrypt-rs"
 documentation = "https://docs.rs/recrypt"
 categories = ["cryptography", "algorithms"]
-keywords = ["cryptography", "proxy-re-encryption", "PRE", "ECC", "transform-encryption"]
+keywords = [
+	"cryptography",
+	"proxy-re-encryption",
+	"PRE",
+	"ECC",
+	"transform-encryption",
+]
 description = "A pure-Rust implementation of Transform Encryption, a Proxy Re-encryption scheme"
 edition = "2021"
 rust-version = "1.70.0"
 
 [target.'cfg(all(unix, not(target_arch = "wasm32")))'.dependencies]
-libc = {version = "0.2"}
+libc = { version = "0.2" }
 
 [target.'cfg(all(windows, not(target_arch = "wasm32")))'.dependencies]
-winapi = {version = "0.3", features = ["memoryapi", "sysinfoapi"]}
+winapi = { version = "0.3", features = ["memoryapi", "sysinfoapi"] }
 
 [dependencies]
 cfg-if = "1"
 clear_on_drop = "0.2"
 derivative = "2.1"
 # Disable all features for ed25519 and enable the proper ones down in the [features] section below
-ed25519-dalek = {version = "=0.1.0", default-features = false, features = ["std"], package = "ed25519-dalek-fiat"}
+ed25519-dalek = { version = "=0.1.0", default-features = false, features = [
+	"std",
+], package = "ed25519-dalek-fiat" }
 # Explicit dependency so we can pass the wasm-bindgen flag to it
-getrandom = {version = "0.2", optional = true}
+getrandom = { version = "0.2", optional = true, features = ["js"] }
 gridiron = "0.10"
 hex = "0.4"
 lazy_static = "1.4"
@@ -40,6 +48,7 @@ sha2 = "0.10"
 criterion = "0.4"
 proptest = "1"
 serde_json = "1"
+wasm-bindgen = "0.2.95"
 
 [profile.dev]
 opt-level = 2
