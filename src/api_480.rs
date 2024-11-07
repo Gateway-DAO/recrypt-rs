@@ -888,9 +888,7 @@ impl TransformKey {
 
         bytes
     }
-}
 
-impl TransformKey {
     pub fn from_bytes(bytes: &[u8]) -> Self {
         let mut offset = 0;
 
