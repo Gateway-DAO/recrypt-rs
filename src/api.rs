@@ -183,6 +183,74 @@ pub struct TransformBlock {
 }
 
 impl TransformBlock {
+    fn to_bytes(self) -> Vec<u8> {
+        let mut bytes = Vec::with_capacity(
+            PublicKey::ENCODED_SIZE_BYTES * 2 +  // For both public keys (x,y coordinates each)
+            EncryptedTempKey::ENCODED_SIZE_BYTES * 2, // For both encrypted temp keys
+        );
+
+        // Add public key x,y coordinates
+        let (x_bytes, y_bytes) = self.public_key.bytes_x_y();
+        bytes.extend_from_slice(x_bytes);
+        bytes.extend_from_slice(y_bytes);
+
+        // Add encrypted temp key
+        bytes.extend_from_slice(self.encrypted_temp_key.bytes());
+
+        // Add random transform public key x,y coordinates
+        let (rx_bytes, ry_bytes) = self.random_transform_public_key.bytes_x_y();
+        bytes.extend_from_slice(rx_bytes);
+        bytes.extend_from_slice(ry_bytes);
+
+        // Add encrypted random transform temp key
+        bytes.extend_from_slice(self.encrypted_random_transform_temp_key.bytes());
+
+        bytes
+    }
+
+    fn from_bytes(bytes: &[u8]) -> Result<Self> {
+        let expected_size =
+            PublicKey::ENCODED_SIZE_BYTES * 2 + EncryptedTempKey::ENCODED_SIZE_BYTES * 2;
+
+        if bytes.len() != expected_size {
+            return Err(RecryptErr::InputWrongSize("TransformBlock", bytes.len()));
+        }
+
+        let mut offset = 0;
+
+        // Parse public key
+        let pk1_x = &bytes[offset..offset + Monty256::ENCODED_SIZE_BYTES];
+        offset += Monty256::ENCODED_SIZE_BYTES;
+        let pk1_y = &bytes[offset..offset + Monty256::ENCODED_SIZE_BYTES];
+        offset += Monty256::ENCODED_SIZE_BYTES;
+        let public_key = PublicKey::new_from_slice((pk1_x, pk1_y))?;
+
+        // Parse encrypted temp key
+        let etk_bytes = &bytes[offset..offset + EncryptedTempKey::ENCODED_SIZE_BYTES];
+        let encrypted_temp_key = EncryptedTempKey::new_from_slice(etk_bytes)?;
+        offset += EncryptedTempKey::ENCODED_SIZE_BYTES;
+
+        // Parse random transform public key
+        let pk2_x = &bytes[offset..offset + Monty256::ENCODED_SIZE_BYTES];
+        offset += Monty256::ENCODED_SIZE_BYTES;
+        let pk2_y = &bytes[offset..offset + Monty256::ENCODED_SIZE_BYTES];
+        offset += Monty256::ENCODED_SIZE_BYTES;
+        let random_transform_public_key = PublicKey::new_from_slice((pk2_x, pk2_y))?;
+
+        // Parse encrypted random transform temp key
+        let ertk_bytes = &bytes[offset..offset + EncryptedTempKey::ENCODED_SIZE_BYTES];
+        let encrypted_random_transform_temp_key = EncryptedTempKey::new_from_slice(ertk_bytes)?;
+
+        TransformBlock::new(
+            &public_key,
+            &encrypted_temp_key,
+            &random_transform_public_key,
+            &encrypted_random_transform_temp_key,
+        )
+    }
+}
+
+impl TransformBlock {
     /// Construct TransformBlock from constituent parts.
     /// - `public_key`                    - public key corresponding to private key used to encrypt the temp key
     /// - `encrypted_temp_key`            - random value generated for the transform key and encrypted to the delegatee. Copied from the parent `TransformKey`
@@ -263,6 +331,204 @@ pub enum EncryptedValue {
 }
 
 impl EncryptedValue {
+    pub fn as_bytes(&self) -> Vec<u8> {
+        let mut bytes = Vec::new();
+
+        match self {
+            EncryptedValue::EncryptedOnceValue {
+                ephemeral_public_key,
+                encrypted_message,
+                auth_hash,
+                public_signing_key,
+                signature,
+            } => {
+                // Identifier
+                bytes.push(0x01);
+
+                // Serialize fields
+                bytes.extend_from_slice(&ephemeral_public_key.to_bytes());
+                bytes.extend_from_slice(encrypted_message.bytes());
+                bytes.extend_from_slice(auth_hash.bytes());
+                bytes.extend_from_slice(public_signing_key.bytes());
+                bytes.extend_from_slice(signature.bytes());
+            }
+            EncryptedValue::TransformedValue {
+                ephemeral_public_key,
+                encrypted_message,
+                auth_hash,
+                transform_blocks,
+                public_signing_key,
+                signature,
+            } => {
+                // Identifier byte
+                bytes.push(0x02);
+
+                // Ephemeral public key (x,y coordinates)
+                let (x_bytes, y_bytes) = ephemeral_public_key.bytes_x_y();
+                bytes.extend_from_slice(x_bytes);
+                bytes.extend_from_slice(y_bytes);
+
+                // Encrypted message
+                bytes.extend_from_slice(encrypted_message.bytes());
+
+                // Auth hash
+                bytes.extend_from_slice(auth_hash.bytes());
+
+                // Number of transform blocks (u16 big-endian)
+                let num_blocks = (transform_blocks.len() as u16).to_be_bytes();
+                bytes.extend_from_slice(&num_blocks);
+
+                // Serialize transform blocks
+                bytes.extend_from_slice(&transform_blocks.first().to_bytes());
+                for block in transform_blocks.rest() {
+                    bytes.extend_from_slice(&block.to_bytes());
+                }
+
+                // Public signing key
+                bytes.extend_from_slice(public_signing_key.bytes());
+
+                // Signature
+                bytes.extend_from_slice(signature.bytes());
+            }
+        }
+
+        bytes
+    }
+
+    pub fn from_bytes(bytes: Vec<u8>) -> Result<Self> {
+        let mut offset = 0;
+
+        if bytes.len() < 1 {
+            return Err(RecryptErr::InputWrongSize("EncryptedValue", bytes.len()));
+        }
+
+        let variant = bytes[offset];
+        offset += 1;
+
+        match variant {
+            0x01 => {
+                // Deserialize EncryptedOnceValue
+                // ephemeral_public_key
+                let x_bytes = &bytes[offset..offset + Monty256::ENCODED_SIZE_BYTES];
+                offset += Monty256::ENCODED_SIZE_BYTES;
+                let y_bytes = &bytes[offset..offset + Monty256::ENCODED_SIZE_BYTES];
+                offset += Monty256::ENCODED_SIZE_BYTES;
+                let ephemeral_public_key = PublicKey::new_from_slice((x_bytes, y_bytes))?;
+
+                // encrypted_message
+                let encrypted_message_bytes =
+                    &bytes[offset..offset + EncryptedMessage::ENCODED_SIZE_BYTES];
+
+                offset += EncryptedMessage::ENCODED_SIZE_BYTES;
+                let encrypted_message =
+                    EncryptedMessage::new_from_slice(encrypted_message_bytes).unwrap();
+
+                // auth_hash
+                let auth_hash_bytes = &bytes[offset..offset + 32];
+                offset += 32;
+                let auth_hash = AuthHash::new_from_slice(auth_hash_bytes).unwrap();
+
+                // public_signing_key
+                let public_signing_key_bytes = &bytes[offset..offset + PublicSigningKey::SIZE];
+                offset += PublicSigningKey::SIZE;
+                let public_signing_key: PublicSigningKey =
+                    PublicSigningKey::new_from_slice(public_signing_key_bytes).unwrap();
+
+                // signature
+                let signature_bytes = &bytes[offset..offset + Ed25519Signature::SIZE];
+                // No need to update offset as this is the last field
+                let signature = Ed25519Signature::new(signature_bytes.try_into().unwrap());
+
+                Ok(EncryptedValue::EncryptedOnceValue {
+                    ephemeral_public_key,
+                    encrypted_message,
+                    auth_hash,
+                    public_signing_key,
+                    signature,
+                })
+            }
+            0x02 => {
+                // Minimum size check for header fields
+                let min_size = 1 + // variant
+                    Monty256::ENCODED_SIZE_BYTES * 2 + // ephemeral public key
+                    EncryptedMessage::ENCODED_SIZE_BYTES +
+                    AuthHash::ENCODED_SIZE_BYTES +
+                    2; // num_blocks;
+
+                if bytes.len() < min_size {
+                    return Err(RecryptErr::InputWrongSize("TransformedValue", bytes.len()));
+                }
+
+                // Parse ephemeral public key
+                let epk_x = &bytes[offset..offset + Monty256::ENCODED_SIZE_BYTES];
+                offset += Monty256::ENCODED_SIZE_BYTES;
+                let epk_y = &bytes[offset..offset + Monty256::ENCODED_SIZE_BYTES];
+                offset += Monty256::ENCODED_SIZE_BYTES;
+                let ephemeral_public_key = PublicKey::new_from_slice((epk_x, epk_y))?;
+
+                // Parse encrypted message
+                let encrypted_message_bytes =
+                    &bytes[offset..offset + EncryptedMessage::ENCODED_SIZE_BYTES];
+                let encrypted_message = EncryptedMessage::new_from_slice(encrypted_message_bytes)?;
+                offset += EncryptedMessage::ENCODED_SIZE_BYTES;
+
+                // Parse auth hash
+                let auth_hash_bytes = &bytes[offset..offset + AuthHash::ENCODED_SIZE_BYTES];
+                let auth_hash = AuthHash::new_from_slice(auth_hash_bytes)?;
+                offset += AuthHash::ENCODED_SIZE_BYTES;
+
+                // Parse number of blocks
+                let num_blocks = u16::from_be_bytes([bytes[offset], bytes[offset + 1]]);
+                offset += 2;
+
+                // Parse transform blocks
+                let mut transform_blocks_vec = Vec::with_capacity(num_blocks as usize);
+                let block_size =
+                    PublicKey::ENCODED_SIZE_BYTES * 2 + EncryptedTempKey::ENCODED_SIZE_BYTES * 2;
+
+                for _ in 0..num_blocks {
+                    if bytes.len() < offset + block_size {
+                        return Err(RecryptErr::InputWrongSize("TransformBlock", bytes.len()));
+                    }
+
+                    let block_bytes = &bytes[offset..offset + block_size];
+                    let block = TransformBlock::from_bytes(block_bytes)?;
+                    transform_blocks_vec.push(block);
+                    offset += block_size;
+                }
+
+                if transform_blocks_vec.is_empty() {
+                    return Err(RecryptErr::InputWrongSize("TransformBlocks", 0));
+                }
+
+                let first_block = transform_blocks_vec.remove(0);
+                let transform_blocks = NonEmptyVec::new(first_block, transform_blocks_vec);
+
+                // Parse public signing key
+                let psk_bytes = &bytes[offset..offset + PublicSigningKey::SIZE];
+                let public_signing_key = PublicSigningKey::new_from_slice(psk_bytes)?;
+                offset += PublicSigningKey::SIZE;
+
+                // Parse signature
+                let sig_bytes = &bytes[offset..offset + Ed25519Signature::SIZE];
+                let signature = Ed25519Signature::new(sig_bytes.try_into().unwrap());
+
+                Ok(EncryptedValue::TransformedValue {
+                    ephemeral_public_key,
+                    encrypted_message,
+                    auth_hash,
+                    transform_blocks,
+                    public_signing_key,
+                    signature,
+                })
+            }
+            _ => Err(RecryptErr::InputWrongSize(
+                "EncryptedValue",
+                variant as usize,
+            )),
+        }
+    }
+
     fn try_from(
         signed_value: internal::SignedValue<internal::EncryptedValue<Monty256>>,
     ) -> Result<EncryptedValue> {
@@ -523,6 +789,72 @@ impl Hashable for TransformKey {
             &self.public_signing_key,
         )
             .to_bytes()
+    }
+}
+
+impl TransformKey {
+    pub fn to_bytes(self) -> Vec<u8> {
+        let mut bytes = Vec::new();
+
+        // Serialize each field into bytes and append to the vector
+        bytes.extend_from_slice(&self.ephemeral_public_key.to_bytes());
+        bytes.extend_from_slice(&self.to_public_key.to_bytes());
+        bytes.extend_from_slice(&self.encrypted_temp_key.to_bytes());
+        bytes.extend_from_slice(&self.hashed_temp_key.to_bytes());
+        bytes.extend_from_slice(&self.public_signing_key.to_bytes());
+        bytes.extend_from_slice(self.signature.bytes());
+
+        bytes
+    }
+
+    pub fn from_bytes(bytes: &[u8]) -> Self {
+        let mut offset = 0;
+
+        // Deserialize ephemeral_public_key
+        let x_bytes = &bytes[offset..offset + Monty256::ENCODED_SIZE_BYTES];
+        offset += Monty256::ENCODED_SIZE_BYTES;
+        let y_bytes = &bytes[offset..offset + Monty256::ENCODED_SIZE_BYTES];
+        offset += Monty256::ENCODED_SIZE_BYTES;
+        let ephemeral_public_key = PublicKey::new_from_slice((x_bytes, y_bytes)).unwrap();
+
+        // Deserialize to_public_key
+        let x_bytes = &bytes[offset..offset + Monty256::ENCODED_SIZE_BYTES];
+        offset += Monty256::ENCODED_SIZE_BYTES;
+        let y_bytes = &bytes[offset..offset + Monty256::ENCODED_SIZE_BYTES];
+        offset += Monty256::ENCODED_SIZE_BYTES;
+        let to_public_key = PublicKey::new_from_slice((x_bytes, y_bytes)).unwrap();
+
+        // Deserialize encrypted_temp_key
+        let encrypted_temp_key_bytes =
+            &bytes[offset..offset + EncryptedTempKey::ENCODED_SIZE_BYTES];
+        offset += EncryptedTempKey::ENCODED_SIZE_BYTES;
+        let encrypted_temp_key =
+            EncryptedTempKey::new_from_slice(encrypted_temp_key_bytes).unwrap();
+
+        // Deserialize hashed_temp_key
+        let hashed_temp_key_bytes = &bytes[offset..offset + HashedValue::ENCODED_SIZE_BYTES];
+        offset += HashedValue::ENCODED_SIZE_BYTES;
+        let hashed_temp_key = HashedValue::new_from_slice(hashed_temp_key_bytes).unwrap();
+
+        // Deserialize public_signing_key
+        let public_signing_key_bytes = &bytes[offset..offset + PublicSigningKey::SIZE];
+        offset += PublicSigningKey::SIZE;
+        let public_signing_key =
+            PublicSigningKey::new(public_signing_key_bytes.try_into().unwrap());
+
+        // Deserialize signature
+        let signature_bytes = &bytes[offset..offset + Ed25519Signature::SIZE];
+        // No need to update offset as this is the last field
+        let signature = Ed25519Signature::new(signature_bytes.try_into().unwrap());
+
+        TransformKey::new(
+            ephemeral_public_key,
+            to_public_key,
+            encrypted_temp_key,
+            hashed_temp_key,
+            public_signing_key,
+            signature,
+        )
     }
 }
 
